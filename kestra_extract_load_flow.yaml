@@ -1,0 +1,266 @@
+id: ais_extract
+namespace: maritime.piraeus
+
+description: |
+  Downloads Piraeus AIS data ZIPs from Zenodo, decompresses them,
+  uploads extracted CSVs to GCS, and loads them into BigQuery.
+
+inputs:
+  - id: dataset_type
+    type: SELECT
+    displayName: "Dataset type"
+    values:
+      - dynamic
+      - static
+    defaults: dynamic
+
+  - id: year
+    type: SELECT
+    displayName: "Year (used only for dynamic data)"
+    values:
+      - "2017"
+      - "2018"
+      - "2019"
+    defaults: "2018"
+
+variables:
+  gcs_bucket: "{{ kv('GCP_BUCKET_NAME') }}"
+  bq_project: "{{ kv('GCP_PROJECT_ID') }}"
+  bq_dataset_raw: "{{ kv('GCP_DATASET') }}"
+  bq_location: "{{ kv('GCP_LOCATION') }}"
+  zip_filename: "{{ inputs.dataset_type == 'dynamic' ? 'unipi_ais_dynamic_' ~ inputs.year ~ '.zip' : 'ais_static.zip' }}"
+  zenodo_base_url: "https://zenodo.org/records/6323416/files"
+  gcs_prefix: "{{ inputs.dataset_type == 'dynamic' ? 'raw/piraeus/unipi_ais_dynamic/year=' ~ inputs.year : 'raw/piraeus/ais_static' }}"
+
+  dynamic_final_table: "ais_kinematic"
+  dynamic_staging_table: "ais_kinematic_staging"
+
+tasks:
+  - id: log_inputs
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      === FLOW START ===
+      dataset_type: {{ inputs.dataset_type }}
+      year: {{ inputs.year }}
+      zip_filename: {{ render(vars.zip_filename) }}
+      gcs_prefix: {{ render(vars.gcs_prefix) }}
+      bq_project: {{ render(vars.bq_project) }}
+      bq_dataset: {{ render(vars.bq_dataset_raw) }}
+      gcs_bucket: {{ render(vars.gcs_bucket) }}
+
+  - id: download_zip
+    type: io.kestra.plugin.core.http.Download
+    description: "Download {{ render(vars.zip_filename) }} from Zenodo"
+    uri: "{{ render(vars.zenodo_base_url) }}/{{ render(vars.zip_filename) }}?download=1"
+    options:
+      connectTimeout: PT1M
+      readTimeout: PT30M
+
+  - id: log_download
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      === DOWNLOAD COMPLETE ===
+      Downloaded URI: {{ outputs.download_zip.uri }}
+
+  - id: decompress_zip
+    type: io.kestra.plugin.compress.ArchiveDecompress
+    description: "Extract CSV files from the ZIP"
+    from: "{{ outputs.download_zip.uri }}"
+    algorithm: ZIP
+
+  - id: log_decompressed_files
+    type: io.kestra.plugin.core.log.Log
+    message: |
+      === DECOMPRESSED FILES ===
+      Files found: {{ outputs.decompress_zip.files | jq('. | keys | .[]') }}
+
+  - id: upload_each_csv
+    type: io.kestra.plugin.core.flow.ForEach
+    description: "Upload each extracted CSV to GCS"
+    values: "{{ outputs.decompress_zip.files | jq('. | keys | map(select(endswith(\".csv\"))) | .[]') }}"
+    tasks:
+      - id: log_uploading
+        type: io.kestra.plugin.core.log.Log
+        message: "Uploading file: {{ taskrun.value }} → gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/{{ taskrun.value }}"
+
+      - id: upload_to_gcs
+        type: io.kestra.plugin.gcp.gcs.Upload
+        from: "{{ outputs.decompress_zip.files[taskrun.value] }}"
+        to: "gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/{{ taskrun.value }}"
+
+  - id: process_dynamic
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.dataset_type == 'dynamic' }}"
+    then:
+      - id: create_dynamic_final_table_if_not_exists
+        type: io.kestra.plugin.gcp.bigquery.Query
+        sql: |
+          CREATE TABLE IF NOT EXISTS `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_final_table }}`
+          (
+            unique_row_id STRING,
+            timestamp_ms INT64,
+            vessel_id STRING,
+            lon FLOAT64,
+            lat FLOAT64,
+            heading FLOAT64,
+            speed FLOAT64,
+            course FLOAT64,
+            source_year INT64,
+            ingestion_ts TIMESTAMP,
+            event_ts TIMESTAMP
+          )
+          PARTITION BY DATE(event_ts)
+          OPTIONS (require_partition_filter = FALSE);
+
+      - id: log_final_table_ready
+        type: io.kestra.plugin.core.log.Log
+        message: "Final table ready: {{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_final_table }}"
+
+      - id: create_dynamic_staging_table_if_not_exists
+        type: io.kestra.plugin.gcp.bigquery.Query
+        sql: |
+          CREATE TABLE IF NOT EXISTS `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_staging_table }}`
+          (
+            timestamp INT64,
+            vessel_id STRING,
+            lon FLOAT64,
+            lat FLOAT64,
+            heading FLOAT64,
+            speed FLOAT64,
+            course FLOAT64
+          );
+
+      - id: truncate_dynamic_staging
+        type: io.kestra.plugin.gcp.bigquery.Query
+        sql: |
+          TRUNCATE TABLE `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_staging_table }}`;
+
+      - id: log_staging_truncated
+        type: io.kestra.plugin.core.log.Log
+        message: "Staging table truncated: {{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_staging_table }}"
+
+      - id: load_dynamic_staging
+        type: io.kestra.plugin.gcp.bigquery.Query
+        sql: |
+          LOAD DATA OVERWRITE `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_staging_table }}`
+          (
+            timestamp INT64,
+            vessel_id STRING,
+            lon FLOAT64,
+            lat FLOAT64,
+            heading FLOAT64,
+            speed FLOAT64,
+            course FLOAT64
+          )
+          FROM FILES (
+            format = 'CSV',
+            uris = ['gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/*.csv'],
+            skip_leading_rows = 1
+          );
+
+      - id: log_staging_loaded
+        type: io.kestra.plugin.core.log.Log
+        message: "Staging load complete from: gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/*.csv"
+
+      # FIX 4: Changed longitude/latitude → lon/lat to match staging schema
+      # FIX 5: Wrapped inputs.year in quotes so it renders correctly as a string cast
+      - id: merge_dynamic_into_final
+        type: io.kestra.plugin.gcp.bigquery.Query
+        sql: |
+          MERGE `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_final_table }}` T
+          USING (
+            SELECT
+              TO_HEX(MD5(CONCAT(
+                COALESCE(CAST(vessel_id AS STRING), ''), '|',
+                COALESCE(CAST(timestamp AS STRING), ''), '|',
+                COALESCE(CAST(ROUND(lon, 6) AS STRING), ''), '|',
+                COALESCE(CAST(ROUND(lat, 6) AS STRING), '')
+              ))) AS unique_row_id,
+              timestamp AS timestamp_ms,
+              vessel_id,
+              lon,
+              lat,
+              heading,
+              speed,
+              course,
+              CAST('{{ inputs.year }}' AS INT64) AS source_year,
+              CURRENT_TIMESTAMP() AS ingestion_ts,
+              TIMESTAMP_MILLIS(timestamp) AS event_ts
+            FROM `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_staging_table }}`
+          ) S
+          ON T.unique_row_id = S.unique_row_id
+          WHEN NOT MATCHED THEN
+            INSERT (
+              unique_row_id,
+              timestamp_ms,
+              vessel_id,
+              lon,
+              lat,
+              heading,
+              speed,
+              course,
+              source_year,
+              ingestion_ts,
+              event_ts
+            )
+            VALUES (
+              S.unique_row_id,
+              S.timestamp_ms,
+              S.vessel_id,
+              S.lon,
+              S.lat,
+              S.heading,
+              S.speed,
+              S.course,
+              S.source_year,
+              S.ingestion_ts,
+              S.event_ts
+            );
+
+      - id: log_dynamic_completion
+        type: io.kestra.plugin.core.log.Log
+        message: |
+          === DYNAMIC LOAD COMPLETE ===
+          Year: {{ inputs.year }}
+          GCS path: gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/
+          Staging table: {{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_staging_table }}
+          Final table: {{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.{{ vars.dynamic_final_table }}
+
+  - id: process_static
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ inputs.dataset_type == 'static' }}"
+    then:
+      - id: load_ais_codes_descriptions
+        type: io.kestra.plugin.gcp.bigquery.Query
+        sql: |
+          LOAD DATA OVERWRITE `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.ais_codes_descriptions`
+          FROM FILES (
+            format = 'CSV',
+            uris = ['gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/ais_static/ais_codes_descriptions.csv'],
+            skip_leading_rows = 1
+          );
+
+      - id: load_unipi_ais_static
+        type: io.kestra.plugin.gcp.bigquery.Query
+        sql: |
+          LOAD DATA OVERWRITE `{{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.unipi_ais_static`
+          FROM FILES (
+            format = 'CSV',
+            uris = ['gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/ais_static/unipi_ais_static.csv'],
+            skip_leading_rows = 1
+          );
+
+      - id: log_static_completion
+        type: io.kestra.plugin.core.log.Log
+        message: |
+          === STATIC LOAD COMPLETE ===
+          GCS path: gs://{{ render(vars.gcs_bucket) }}/{{ render(vars.gcs_prefix) }}/
+          Tables loaded:
+          - {{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.ais_codes_descriptions
+          - {{ render(vars.bq_project) }}.{{ render(vars.bq_dataset_raw) }}.unipi_ais_static
+
+  - id: purge_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+    description: "Clean up Kestra execution files"
+    disabled: false
+
