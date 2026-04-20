@@ -57,6 +57,18 @@ Star schema centered on a pre-aggregated daily activity fact.
 
 ![Star schema](./docs/star_schema.svg)
 
+## dbt Lineage
+
+The full data flow from raw sources through staging, intermediate, and marts layers:
+
+![dbt lineage](./docs/lineage.png)
+
+Key points from the lineage:
+- **3 sources** (SRC) feed 3 staging models
+- **1 seed** (SED) provides the Piraeus geography polygons
+- **4 intermediate models** handle enrichment and spatial operations
+- **4 marts** (3 dims + 1 fact) serve the dashboard_view
+
 ## Tech Stack
 
 - **Orchestration:** Kestra (on Google Compute Engine)
