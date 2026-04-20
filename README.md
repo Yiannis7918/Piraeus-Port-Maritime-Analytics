@@ -31,29 +31,29 @@ Everything runs on Google Cloud Platform — no local execution, fully reproduci
 
 Kestra server deployed on a GCE e2-medium VM in `europe-west1` with 30 GB persistent disk (required for unzipping 16 GB AIS archives).
 
-![Kestra VM on GCE](./docs/vm_Instance.png)
+![Kestra VM on GCE](./Images/vm_Instance.png)
 
 The `piraeus_ais_extract` flow is parameterized by year and dataset type, orchestrating download → decompression → GCS upload → cleanup.
 
-![Kestra flow execution](./docs/kestra_flow.png)
+![Kestra flow execution](./Images/kestra_flow.png)
 
 ### Data Warehouse — BigQuery
 
 Project: `dtc-de-course-488912`, region `europe-west1`. Layered datasets follow dbt best practices.
 
-![BigQuery datasets](./docs/bigquery_datasets.png)
+![BigQuery datasets](./Images/bigquery_datasets.png)
 
 ### Transformations — dbt Cloud
 
 Twelve dbt models organized in staging, intermediate, and marts layers. Full lineage auto-generated through `ref()` calls.
 
-![dbt lineage graph](./docs/dbt_run_cloud.npg)
+![dbt lineage graph](./Images/dbt_run_cloud.npg)
 
 ### Dashboard — Looker Studio
 
 Connected directly to `dbt_dev_marts.dashboard_view`, queries return in under 2 seconds.
 
-![Dashboard preview](./docs/dashboard.png)
+![Dashboard preview](./Images/dashboard.png)
 
 ## Data Engineering Concepts Applied
 
@@ -87,13 +87,13 @@ Looker Studio (dashboard)
 
 Star schema centered on a pre-aggregated daily activity fact.
 
-![Star schema](./docs/star_schema.svg)
+![Star schema](./Images/star_schema.svg)
 
 ## dbt Lineage
 
 The full data flow from raw sources through staging, intermediate, and marts layers:
 
-![dbt lineage](./docs/lineage.png)
+![dbt lineage](./Images/lineage.png)
 
 Key points from the lineage:
 - **3 sources** (SRC) feed 3 staging models
