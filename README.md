@@ -29,13 +29,13 @@ Everything runs on Google Cloud Platform — no local execution, fully reproduci
 
 ### Orchestration — Kestra on Compute Engine
 
-Kestra server deployed on a GCE e2-medium VM in `europe-west1` with 20 GB persistent disk (required for unzipping 16 GB AIS archives).
+Kestra server deployed on a GCE e2-medium VM in `europe-west1` with 30 GB persistent disk (required for unzipping 16 GB AIS archives).
 
-![Kestra VM on GCE](./docs/gce_kestra_vm.png)
+![Kestra VM on GCE](./docs/vm_Instance.png)
 
 The `piraeus_ais_extract` flow is parameterized by year and dataset type, orchestrating download → decompression → GCS upload → cleanup.
 
-![Kestra flow execution](./docs/kestra_execution.png)
+![Kestra flow execution](./docs/kestra_flow.png)
 
 ### Data Warehouse — BigQuery
 
@@ -43,21 +43,17 @@ Project: `dtc-de-course-488912`, region `europe-west1`. Layered datasets follow 
 
 ![BigQuery datasets](./docs/bigquery_datasets.png)
 
-The fact table is partitioned by month on `event_date` and clustered by `shiptype_category` and `zone` for query performance.
-
-![BigQuery fact table details](./docs/bigquery_fact_details.png)
-
 ### Transformations — dbt Cloud
 
 Twelve dbt models organized in staging, intermediate, and marts layers. Full lineage auto-generated through `ref()` calls.
 
-![dbt lineage graph](./docs/lineage.png)
+![dbt lineage graph](./docs/dbt_run_cloud.npg)
 
 ### Dashboard — Looker Studio
 
 Connected directly to `dbt_dev_marts.dashboard_view`, queries return in under 2 seconds.
 
-![Dashboard preview](./docs/dashboard_preview.png)
+![Dashboard preview](./docs/dashboard.png)
 
 ## Data Engineering Concepts Applied
 
