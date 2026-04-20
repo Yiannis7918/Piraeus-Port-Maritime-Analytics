@@ -51,6 +51,12 @@ BigQuery (data warehouse, europe-west1)
 Looker Studio (dashboard)
 ```
 
+## Data Model
+
+Star schema centered on a pre-aggregated daily activity fact.
+
+![Star schema](./docs/star_schema.svg)
+
 ## Tech Stack
 
 - **Orchestration:** Kestra (on Google Compute Engine)
