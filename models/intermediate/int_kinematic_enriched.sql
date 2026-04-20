@@ -8,8 +8,7 @@ with static_filtered as (
         country,
         shiptype_code
     from {{ ref('stg_ais_static') }}
-    where shiptype_code >= 20
-      and shiptype_code not in (38, 39)
+    where shiptype_code between 20 and 99 and shiptype_code not in (38, 39)
 ),
 
 kinematic as (
