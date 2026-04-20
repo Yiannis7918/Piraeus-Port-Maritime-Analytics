@@ -1,4 +1,4 @@
-# Piraeus Vessel Activite - Maritime Data ELT Pipeline
+# Piraeus Vessel Activity - Maritime Data ELT Pipeline
 
 End-to-end data engineering project built as the capstone for the **[Data Engineering Zoomcamp](https://datatalks.club/blog/data-engineering-zoomcamp.html)** by DataTalks.Club — a free, hands-on course covering batch and streaming data pipelines, warehousing, and orchestration.
 
