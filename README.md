@@ -23,6 +23,42 @@ The dashboard answers this with two tiles:
   - Confirms the "dual character" of Piraeus: commercial hub (Cargo + Tanker + Passenger) + recreational destination (Pleasure Craft)
   - A zone filter (at-port vs. in-approaches) shows how different categories cluster — tankers and cargo wait in approaches, ferries turn around at the port itself
 
+## Cloud Deployment
+
+Everything runs on Google Cloud Platform — no local execution, fully reproducible from the cloud.
+
+### Orchestration — Kestra on Compute Engine
+
+Kestra server deployed on a GCE e2-medium VM in `europe-west1` with 20 GB persistent disk (required for unzipping 16 GB AIS archives).
+
+![Kestra VM on GCE](./docs/gce_kestra_vm.png)
+
+The `piraeus_ais_extract` flow is parameterized by year and dataset type, orchestrating download → decompression → GCS upload → cleanup.
+
+![Kestra flow execution](./docs/kestra_execution.png)
+
+### Data Warehouse — BigQuery
+
+Project: `dtc-de-course-488912`, region `europe-west1`. Layered datasets follow dbt best practices.
+
+![BigQuery datasets](./docs/bigquery_datasets.png)
+
+The fact table is partitioned by month on `event_date` and clustered by `shiptype_category` and `zone` for query performance.
+
+![BigQuery fact table details](./docs/bigquery_fact_details.png)
+
+### Transformations — dbt Cloud
+
+Twelve dbt models organized in staging, intermediate, and marts layers. Full lineage auto-generated through `ref()` calls.
+
+![dbt lineage graph](./docs/lineage.png)
+
+### Dashboard — Looker Studio
+
+Connected directly to `dbt_dev_marts.dashboard_view`, queries return in under 2 seconds.
+
+![Dashboard preview](./docs/dashboard_preview.png)
+
 ## Data Engineering Concepts Applied
 
 All core concepts from the Zoomcamp, grounded in a real workload:
