@@ -5,7 +5,7 @@ with source as (
 cleaned as (
     select
         `Type Code` as shiptype_code,
-        Description as shiptype_name
+        Description as shiptype
     from source
     where `Type Code` is not null
 )
