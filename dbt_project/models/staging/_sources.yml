@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: piraeus_raw
+    database: dtc-de-course-488912
+    schema: project_dataset
+    description: "Raw Piraeus AIS data loaded from Zenodo via Kestra"
+    tables:
+      - name: ais_codes_descriptions
+        description: "Lookup table: ship type codes and their descriptions"
+      - name: unipi_ais_static
+        description: "Vessel registry: vessel_id, country, shiptype"
+      - name: ais_kinematic
+        description: "AIS position pings: 240M rows across 2017-2019"
