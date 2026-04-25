@@ -47,7 +47,7 @@ Project: `dtc-de-course-488912`, region `europe-west1`. Layered datasets follow 
 
 Twelve dbt models organized in staging, intermediate, and marts layers. Full lineage auto-generated through `ref()` calls.
 
-![dbt lineage graph](./Images/dbt_run_cloud.npg)
+![dbt lineage graph](./Images/dbt_run_cloud.png)
 
 ### Dashboard — Looker Studio
 
